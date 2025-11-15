@@ -1,0 +1,15 @@
+{
+  "name": "vpm.cielo-h.colormenugenerator",
+  "displayName": "Color Menu Generator",
+  "version": "1.0.0",
+  "unity": "2019.4",
+  "description": "シーン内のベースprefabと複数のバリエーションprefabからマテリアル変更メニューを生成するツール",
+  "author": {
+    "name": "cielo-h",
+    "url": "https://github.com/cielo-h"
+  },
+  "vpmDependencies": {
+    "com.vrchat.avatars": ">=3.5.0",
+    "net.narazaka.vrchat.avatar-menu-creater-for-ma": ">=1.0.0"
+  }
+}
