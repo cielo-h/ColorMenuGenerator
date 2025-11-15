@@ -448,6 +448,23 @@ namespace AvatarMenuCreatorGenerator
                 menuObject.transform.SetParent(targetAvatar.transform);
                 menuObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                 menuObject.transform.localScale = Vector3.one;
+                
+                var choiceNames = new HashSet<string>();
+                foreach (var variation in includedVariations)
+                {
+                    string originalName = variation.choiceName;
+                    string uniqueName = originalName;
+                    int counter = 2;
+                    
+                    while (choiceNames.Contains(uniqueName))
+                    {
+                        uniqueName = $"{originalName}{counter}";
+                        counter++;
+                    }
+                    
+                    choiceNames.Add(uniqueName);
+                    variation.choiceName = uniqueName;
+                }
 
                 // AvatarChooseMenuCreatorコンポーネントを追加
                 var chooseMenuCreator = Undo.AddComponent<AvatarChooseMenuCreator>(menuObject);
