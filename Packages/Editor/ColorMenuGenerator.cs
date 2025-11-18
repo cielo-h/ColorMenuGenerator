@@ -3,6 +3,7 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
 using net.narazaka.avatarmenucreator.components;
+using nadena.dev.modular_avatar.core;
 
 #if UNITY_EDITOR
 namespace AvatarMenuCreatorGenerator
@@ -10,7 +11,7 @@ namespace AvatarMenuCreatorGenerator
     /// <summary>
     /// シーン内のベースprefabと複数のバリエーションprefabからマテリアル変更メニューを生成するツール
     /// </summary>
-    public class MaterialPresetChooseMenuGenerator : EditorWindow
+    public partial class MaterialPresetChooseMenuGenerator : EditorWindow
     {
         private GameObject targetAvatar;
         private GameObject basePrefab; // シーン内の既存オブジェクト
@@ -18,281 +19,12 @@ namespace AvatarMenuCreatorGenerator
         private string menuName = "色メニュー";
         private bool saved = true;
         private bool synced = true;
+        private bool choiceNameOnlyNumber = false;
         private int defaultChoiceIndex = 0;
 
         private readonly List<PrefabVariation> detectedVariations = new();
         private Vector2 scrollPos;
         private bool showDetectedMaterials = true;
-
-        [System.Serializable]
-        public class PrefabVariation
-        {
-            public string choiceName;
-            public GameObject sourcePrefab;
-            public bool include = true;
-            public Texture2D icon;
-            public List<MaterialInfo> materials = new();
-            public bool isBase = false; // ベースprefabかどうか
-        }
-
-        [System.Serializable]
-        public class MaterialInfo
-        {
-            public Material material;
-            public string rendererPath;
-            public int materialSlotIndex;
-        }
-
-        [MenuItem("Tools/Color Menu Generator")]
-        public static void ShowWindow()
-        {
-            var window = GetWindow<MaterialPresetChooseMenuGenerator>("Material Preset Generator");
-            window.minSize = new Vector2(480, 600);
-        }
-
-        void OnGUI()
-        {
-            scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
-
-            GUILayout.Label("マテリアルプリセット ChooseMenu 生成", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(
-                "シーン内のベースオブジェクトと複数のバリエーションprefabから\n" +
-                "マテリアル変更メニューを生成します。\n" +
-                "※ベースオブジェクトは既にシーンに配置されている必要があります。",
-                MessageType.Info);
-            EditorGUILayout.Space(10);
-
-            // 基本設定
-            EditorGUILayout.LabelField("基本設定", EditorStyles.boldLabel);
-            targetAvatar = EditorGUILayout.ObjectField("対象アバター", targetAvatar, typeof(GameObject), true) as GameObject;
-
-            if (targetAvatar != null)
-            {
-                if (!targetAvatar.TryGetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>(out var _))
-                {
-                    EditorGUILayout.HelpBox("選択されたオブジェクトにVRCAvatarDescriptorがありません", MessageType.Warning);
-                }
-            }
-
-            EditorGUILayout.Space(10);
-
-            // ベースオブジェクト (シーン内)
-            EditorGUILayout.LabelField("ベースオブジェクト (シーン内)", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("シーンに既に配置されているオブジェクトを選択してください", MessageType.None);
-            
-            GameObject previousBase = basePrefab;
-            basePrefab = EditorGUILayout.ObjectField("ベースオブジェクト", basePrefab, typeof(GameObject), true) as GameObject;
-
-            if (basePrefab != null && basePrefab != previousBase)
-            {
-                // シーン内のオブジェクトかチェック
-                if (!basePrefab.scene.IsValid())
-                {
-                    EditorUtility.DisplayDialog("エラー", "シーン内のオブジェクトを選択してください。\nプロジェクトのprefabは使用できません。", "OK");
-                    basePrefab = null;
-                }
-                else
-                {
-                    detectedVariations.Clear();
-                }
-            }
-
-            EditorGUILayout.Space(10);
-
-            // バリエーションPrefab
-            EditorGUILayout.LabelField("バリエーションPrefab", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("マテリアルバリエーションを含むprefabをドラッグ&ドロップで追加してください", MessageType.None);
-
-            // ドラッグ&ドロップエリア
-            Rect dropArea = GUILayoutUtility.GetRect(0f, 50f, GUILayout.ExpandWidth(true));
-            GUI.Box(dropArea, "Prefabをここにドラッグ&ドロップ", EditorStyles.helpBox);
-
-            Event evt = Event.current;
-            switch (evt.type)
-            {
-                case EventType.DragUpdated:
-                case EventType.DragPerform:
-                    if (!dropArea.Contains(evt.mousePosition))
-                        break;
-
-                    DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-
-                    if (evt.type == EventType.DragPerform)
-                    {
-                        DragAndDrop.AcceptDrag();
-
-                        foreach (UnityEngine.Object draggedObject in DragAndDrop.objectReferences)
-                        {
-                            GameObject go = draggedObject as GameObject;
-                            if (go != null && !variationPrefabs.Contains(go))
-                            {
-                                // プロジェクトのprefabかチェック
-                                if (PrefabUtility.IsPartOfPrefabAsset(go))
-                                {
-                                    variationPrefabs.Add(go);
-                                }
-                                else
-                                {
-                                    Debug.LogWarning($"{go.name} はプロジェクトのprefabではありません。スキップします。");
-                                }
-                            }
-                        }
-                        detectedVariations.Clear();
-                    }
-                    evt.Use();
-                    break;
-            }
-
-            EditorGUILayout.Space(5);
-
-            for (int i = 0; i < variationPrefabs.Count; i++)
-            {
-                EditorGUILayout.BeginHorizontal();
-                variationPrefabs[i] = EditorGUILayout.ObjectField($"Prefab {i + 1}", variationPrefabs[i], typeof(GameObject), false) as GameObject;
-                if (GUILayout.Button("-", GUILayout.Width(25)))
-                {
-                    variationPrefabs.RemoveAt(i);
-                    detectedVariations.Clear();
-                    break;
-                }
-                EditorGUILayout.EndHorizontal();
-            }
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("+ Prefabを追加"))
-            {
-                variationPrefabs.Add(null);
-            }
-            if (variationPrefabs.Count > 0 && GUILayout.Button("全てクリア", GUILayout.Width(100)))
-            {
-                if (EditorUtility.DisplayDialog("確認", "全てのPrefabをクリアしますか?", "はい", "いいえ"))
-                {
-                    variationPrefabs.Clear();
-                    detectedVariations.Clear();
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.Space(10);
-
-            // メニュー設定
-            EditorGUILayout.LabelField("メニュー設定", EditorStyles.boldLabel);
-            menuName = EditorGUILayout.TextField("メニュー名", menuName);
-
-            EditorGUILayout.Space(5);
-
-            saved = EditorGUILayout.Toggle("パラメーターを保存", saved);
-            synced = EditorGUILayout.Toggle("パラメーターを同期", synced);
-
-            EditorGUILayout.Space(15);
-
-            // 検出ボタン
-            GUI.backgroundColor = Color.cyan;
-            EditorGUI.BeginDisabledGroup(basePrefab == null);
-            if (GUILayout.Button("全マテリアルを検出", GUILayout.Height(35)))
-            {
-                DetectMaterials();
-            }
-            EditorGUI.EndDisabledGroup();
-            GUI.backgroundColor = Color.white;
-
-            EditorGUILayout.Space(10);
-
-            // 検出されたプリセット表示
-            if (detectedVariations.Count > 0)
-            {
-                showDetectedMaterials = EditorGUILayout.Foldout(showDetectedMaterials,
-                    $"検出されたプリセット ({detectedVariations.Count}個)", true, EditorStyles.foldoutHeader);
-
-                if (showDetectedMaterials)
-                {
-                    EditorGUI.indentLevel++;
-                    EditorGUILayout.BeginVertical("box");
-
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField("デフォルト選択肢:", GUILayout.Width(120));
-                    defaultChoiceIndex = EditorGUILayout.IntSlider(defaultChoiceIndex, 0, detectedVariations.Count - 1);
-                    EditorGUILayout.EndHorizontal();
-
-                    EditorGUILayout.Space(5);
-
-                    for (int i = 0; i < detectedVariations.Count; i++)
-                    {
-                        var variation = detectedVariations[i];
-
-                        GUI.backgroundColor = i == defaultChoiceIndex ? new Color(0.8f, 1f, 0.8f) : 
-                                            variation.isBase ? new Color(0.9f, 0.9f, 1f) : Color.white;
-                        EditorGUILayout.BeginVertical("box");
-                        GUI.backgroundColor = Color.white;
-
-                        EditorGUILayout.BeginHorizontal();
-                        variation.include = EditorGUILayout.Toggle(variation.include, GUILayout.Width(20));
-                        EditorGUILayout.LabelField($"選択肢 {i}", EditorStyles.boldLabel, GUILayout.Width(80));
-                        if (variation.isBase)
-                        {
-                            EditorGUILayout.LabelField("(ベース)", EditorStyles.miniLabel, GUILayout.Width(60));
-                        }
-                        if (i == defaultChoiceIndex)
-                        {
-                            EditorGUILayout.LabelField("(デフォルト)", EditorStyles.miniLabel);
-                        }
-                        EditorGUILayout.EndHorizontal();
-
-                        variation.choiceName = EditorGUILayout.TextField("選択肢名", variation.choiceName);
-
-                        EditorGUI.BeginDisabledGroup(true);
-                        if (variation.isBase)
-                        {
-                            EditorGUILayout.ObjectField("ソース (シーン内)", variation.sourcePrefab, typeof(GameObject), true);
-                        }
-                        else
-                        {
-                            EditorGUILayout.ObjectField("ソースPrefab", variation.sourcePrefab, typeof(GameObject), false);
-                        }
-                        EditorGUILayout.LabelField($"マテリアル数: {variation.materials.Count}");
-                        EditorGUI.EndDisabledGroup();
-
-                        variation.icon = EditorGUILayout.ObjectField("アイコン (任意)", variation.icon, typeof(Texture2D), false) as Texture2D;
-
-                        // マテリアル詳細表示
-                        if (variation.materials.Count > 0)
-                        {
-                            EditorGUILayout.LabelField("含まれるマテリアル:", EditorStyles.miniLabel);
-                            EditorGUI.indentLevel++;
-                            foreach (var mat in variation.materials.Take(5))
-                            {
-                                EditorGUILayout.LabelField($"• {mat.rendererPath} [スロット{mat.materialSlotIndex}]: {(mat.material != null ? mat.material.name : null ?? "null")}", EditorStyles.miniLabel);
-                            }
-                            if (variation.materials.Count > 5)
-                            {
-                                EditorGUILayout.LabelField($"... 他 {variation.materials.Count - 5}個", EditorStyles.miniLabel);
-                            }
-                            EditorGUI.indentLevel--;
-                        }
-
-                        EditorGUILayout.EndVertical();
-                        EditorGUILayout.Space(3);
-                    }
-
-                    EditorGUILayout.EndVertical();
-                    EditorGUI.indentLevel--;
-                }
-            }
-
-            EditorGUILayout.Space(20);
-
-            // 生成ボタン
-            GUI.enabled = detectedVariations.Count > 0 && targetAvatar != null;
-            GUI.backgroundColor = Color.green;
-            if (GUILayout.Button($"{menuName} を生成", GUILayout.Height(40)))
-            {
-                CreateChooseMenu();
-            }
-            GUI.backgroundColor = Color.white;
-            GUI.enabled = true;
-
-            EditorGUILayout.EndScrollView();
-        }
 
         private void DetectMaterials()
         {
@@ -313,7 +45,7 @@ namespace AvatarMenuCreatorGenerator
             }
 
             // 1. ベースオブジェクトを最初の選択肢として追加
-            var baseMaterials = ExtractMaterialsFromObject(basePrefab, basePrefab);
+            var baseMaterials = ExtractMaterialsFromObject(basePrefab);
             if (baseMaterials.Count > 0)
             {
                 detectedVariations.Add(new PrefabVariation
@@ -331,7 +63,7 @@ namespace AvatarMenuCreatorGenerator
             var validPrefabs = variationPrefabs.Where(p => p != null).ToList();
             foreach (var prefab in validPrefabs)
             {
-                var materials = ExtractMaterialsFromObject(prefab, basePrefab);
+                var materials = ExtractMaterialsFromObject(prefab);
 
                 if (materials.Count > 0)
                 {
@@ -363,7 +95,7 @@ namespace AvatarMenuCreatorGenerator
             }
         }
 
-        private List<MaterialInfo> ExtractMaterialsFromObject(GameObject obj, GameObject _)
+        private List<MaterialInfo> ExtractMaterialsFromObject(GameObject obj)
         {
             var materials = new List<MaterialInfo>();
             var renderers = obj.GetComponentsInChildren<Renderer>(true);
@@ -388,36 +120,6 @@ namespace AvatarMenuCreatorGenerator
             }
 
             return materials;
-        }
-
-        private string GetRelativePath(GameObject obj, GameObject root)
-        {
-            if (obj == root) return obj.name;
-
-            List<string> path = new();
-            Transform current = obj.transform;
-
-            while (current != null && current.gameObject != root)
-            {
-                path.Insert(0, current.name);
-                current = current.parent;
-            }
-
-            return string.Join("/", path);
-        }
-
-        string CleanupName(string name)
-        {
-            // "Avatar_ColorRed" -> "ColorRed" のような変換
-            if (name.Contains("_"))
-            {
-                var parts = name.Split('_');
-                if (parts.Length > 1)
-                {
-                    return parts[^1];
-                }
-            }
-            return name;
         }
 
         private void CreateChooseMenu()
@@ -448,20 +150,23 @@ namespace AvatarMenuCreatorGenerator
                 menuObject.transform.SetParent(targetAvatar.transform);
                 menuObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                 menuObject.transform.localScale = Vector3.one;
-                
+
+                //MA Menu Installerを追加
+                VRC.Core.ExtensionMethods.GetOrAddComponent<ModularAvatarMenuInstaller>(menuObject);
+
                 var choiceNames = new HashSet<string>();
                 foreach (var variation in includedVariations)
                 {
                     string originalName = variation.choiceName;
                     string uniqueName = originalName;
                     int counter = 2;
-                    
+
                     while (choiceNames.Contains(uniqueName))
                     {
                         uniqueName = $"{originalName}{counter}";
                         counter++;
                     }
-                    
+
                     choiceNames.Add(uniqueName);
                     variation.choiceName = uniqueName;
                 }
@@ -496,12 +201,12 @@ namespace AvatarMenuCreatorGenerator
                 var matKeys1ArrProp = chooseMaterialsProp.FindPropertyRelative("keys1");
                 var matKeys2ArrProp = chooseMaterialsProp.FindPropertyRelative("keys2");
                 var matValuesArrProp = chooseMaterialsProp.FindPropertyRelative("values");
-                
+
                 if (matKeys1ArrProp == null || matKeys2ArrProp == null || matValuesArrProp == null)
                 {
                     throw new System.Exception("ChooseMaterialsの辞書プロパティが見つかりません。");
                 }
-                
+
                 matKeys1ArrProp.ClearArray();
                 matKeys2ArrProp.ClearArray();
                 matValuesArrProp.ClearArray();
@@ -516,20 +221,31 @@ namespace AvatarMenuCreatorGenerator
                     }
                 }
 
+                var baseRendererMap = BuildRendererMap(basePrefab);
+
                 // 各(Renderer, Slot)をチェックして、バリエーションがあるもののみ追加
                 int arrayIndex = 0;
                 int skippedSlots = 0;
+                List<(string rendererPath, int slotIndex)> uniqueRenderes = new();
+
                 foreach (var (rendererPath, slotIndex) in allRendererSlots)
                 {
+                    // basePrefabに含まれていないrendererはスキップ
+                    if (!baseRendererMap.ContainsKey(rendererPath))
+                    {
+                        uniqueRenderes.Add((rendererPath, slotIndex));
+                        arrayIndex++;
+                        continue;
+                    }
+
                     // このスロットの全マテリアルを収集
                     var materialsForSlot = new List<Material>();
                     bool hasNullMaterial = false;
-                    
+
                     foreach (var variation in includedVariations)
                     {
-                        var matchingMat = variation.materials.FirstOrDefault(m => 
-                            m.rendererPath == rendererPath && m.materialSlotIndex == slotIndex);
-                        if (matchingMat != null)
+                        var matchingMat = FindMatchingMaterial(variation.materials, rendererPath, slotIndex, variation.sourcePrefab, basePrefab, baseRendererMap);
+                        if (matchingMat != null && matchingMat.material != null)
                         {
                             materialsForSlot.Add(matchingMat.material);
                             if (matchingMat.material == null)
@@ -542,7 +258,7 @@ namespace AvatarMenuCreatorGenerator
                     // マテリアルが収集できなかった、または全てnullの場合はスキップ
                     if (materialsForSlot.Count == 0)
                     {
-                        Debug.LogWarning($"スキップ: {rendererPath} [スロット{slotIndex}] - マテリアルが見つかりません");
+                        //Debug.LogWarning($"スキップ: {rendererPath} [スロット{slotIndex}] - マテリアルが見つかりません");
                         skippedSlots++;
                         continue;
                     }
@@ -550,17 +266,18 @@ namespace AvatarMenuCreatorGenerator
                     // 全て同じマテリアルかチェック
                     var firstMaterial = materialsForSlot[0];
                     bool allSame = materialsForSlot.All(m => m == firstMaterial);
-                    
+
                     if (allSame && !hasNullMaterial)
                     {
                         // 全て同一の有効なマテリアル → スキップ
-                        Debug.Log($"スキップ: {rendererPath} [スロット{slotIndex}] - 全ての選択肢で同一マテリアル ({(firstMaterial != null ? firstMaterial.name : null ?? "null")})");
+                        //Debug.Log($"スキップ: {rendererPath} [スロット{slotIndex}]\n全ての選択肢で同一マテリアル ({(firstMaterial != null ? firstMaterial.name : "null")})");
                         skippedSlots++;
                         continue;
                     }
 
                     // アバター内のRendererを探す (ベースオブジェクトから相対パスで)
                     string fullRendererPath = GetGameObjectPath(basePrefab, targetAvatar) + "/" + rendererPath;
+
                     // 先頭のスラッシュを削除
                     if (fullRendererPath.StartsWith("/"))
                     {
@@ -573,12 +290,12 @@ namespace AvatarMenuCreatorGenerator
 
                     SerializedProperty key1Prop = matKeys1ArrProp.GetArrayElementAtIndex(arrayIndex);
                     SerializedProperty key2Prop = matKeys2ArrProp.GetArrayElementAtIndex(arrayIndex);
-                    
+
                     if (key1Prop == null || key2Prop == null)
                     {
                         throw new System.Exception($"キープロパティ[{arrayIndex}]が取得できません。");
                     }
-                    
+
                     key1Prop.stringValue = fullRendererPath;
                     key2Prop.intValue = slotIndex;
 
@@ -588,12 +305,12 @@ namespace AvatarMenuCreatorGenerator
                     SerializedProperty intMatDicProp = valueProp;
                     var intMatKeysArrProp = intMatDicProp.FindPropertyRelative("keys");
                     var intMatValuesArrProp = intMatDicProp.FindPropertyRelative("values");
-                    
+
                     if (intMatKeysArrProp == null || intMatValuesArrProp == null)
                     {
                         throw new System.Exception("マテリアル辞書のkeys/valuesプロパティが見つかりません。");
                     }
-                    
+
                     intMatKeysArrProp.ClearArray();
                     intMatValuesArrProp.ClearArray();
 
@@ -601,8 +318,7 @@ namespace AvatarMenuCreatorGenerator
                     for (int i = 0; i < includedVariations.Count; i++)
                     {
                         var variation = includedVariations[i];
-                        var matchingMat = variation.materials.FirstOrDefault(m => 
-                            m.rendererPath == rendererPath && m.materialSlotIndex == slotIndex);
+                        var matchingMat = FindMatchingMaterial(variation.materials, rendererPath, slotIndex, variation.sourcePrefab, basePrefab, baseRendererMap);
 
                         if (matchingMat != null)
                         {
@@ -612,7 +328,7 @@ namespace AvatarMenuCreatorGenerator
 
                             var intMatKeyProp = intMatKeysArrProp.GetArrayElementAtIndex(matIndex);
                             var intMatValueProp = intMatValuesArrProp.GetArrayElementAtIndex(matIndex);
-                            
+
                             if (intMatKeyProp != null && intMatValueProp != null)
                             {
                                 intMatKeyProp.intValue = i;
@@ -628,12 +344,12 @@ namespace AvatarMenuCreatorGenerator
                 SerializedProperty chooseNamesProp = avatarChooseMenuProp.FindPropertyRelative("ChooseNames") ?? throw new System.Exception("ChooseNamesプロパティが見つかりません。");
                 var namesKeysArrProp = chooseNamesProp.FindPropertyRelative("keys");
                 var namesValuesArrProp = chooseNamesProp.FindPropertyRelative("values");
-                
+
                 if (namesKeysArrProp == null || namesValuesArrProp == null)
                 {
                     throw new System.Exception("ChooseNamesの辞書プロパティが見つかりません。");
                 }
-                
+
                 namesKeysArrProp.ClearArray();
                 namesValuesArrProp.ClearArray();
 
@@ -646,11 +362,11 @@ namespace AvatarMenuCreatorGenerator
 
                     var nameKeyProp = namesKeysArrProp.GetArrayElementAtIndex(i);
                     var nameValueProp = namesValuesArrProp.GetArrayElementAtIndex(i);
-                    
+
                     if (nameKeyProp != null && nameValueProp != null)
                     {
                         nameKeyProp.intValue = i;
-                        nameValueProp.stringValue = variation.choiceName;
+                        nameValueProp.stringValue = choiceNameOnlyNumber ? (i + 1).ToString() : variation.choiceName;
                     }
                 }
 
@@ -658,12 +374,12 @@ namespace AvatarMenuCreatorGenerator
                 SerializedProperty chooseIconsProp = avatarChooseMenuProp.FindPropertyRelative("ChooseIcons") ?? throw new System.Exception("ChooseIconsプロパティが見つかりません。");
                 var iconsKeysArrProp = chooseIconsProp.FindPropertyRelative("keys");
                 var iconsValuesArrProp = chooseIconsProp.FindPropertyRelative("values");
-                
+
                 if (iconsKeysArrProp == null || iconsValuesArrProp == null)
                 {
                     throw new System.Exception("ChooseIconsの辞書プロパティが見つかりません。");
                 }
-                
+
                 iconsKeysArrProp.ClearArray();
                 iconsValuesArrProp.ClearArray();
 
@@ -678,7 +394,7 @@ namespace AvatarMenuCreatorGenerator
 
                         var iconKeyProp = iconsKeysArrProp.GetArrayElementAtIndex(iconIndex);
                         var iconValueProp = iconsValuesArrProp.GetArrayElementAtIndex(iconIndex);
-                        
+
                         if (iconKeyProp != null && iconValueProp != null)
                         {
                             iconKeyProp.intValue = i;
@@ -696,23 +412,21 @@ namespace AvatarMenuCreatorGenerator
                 Undo.CollapseUndoOperations(undoGroup);
 
                 EditorUtility.DisplayDialog("成功",
-                    $"AvatarChooseMenuCreatorを作成しました!\n\n" +
-                    $"名前: {menuName}\n" +
+                    $"{menuName} を作成しました!\n\n" +
                     $"選択肢数: {includedVariations.Count}\n" +
                     $"対象Renderer数: {arrayIndex}\n" +
                     (skippedSlots > 0 ? $"スキップ: {skippedSlots}個 (同一マテリアル)\n" : "") +
-                    $"\nビルド時に自動的にメニューが生成されます。",
+                    (uniqueRenderes.Count > 0 ? $"固有: {uniqueRenderes.Count}個 (固有マテリアル)\n" : ""),
                     "OK");
 
-                Debug.Log($"✓ ChooseMenu '{menuName}' を作成しました");
-                Debug.Log($"  選択肢:");
-                foreach (var variation in includedVariations)
+                if (uniqueRenderes.Count > 0)
                 {
-                    Debug.Log($"    - {variation.choiceName}: {variation.materials.Count}個のマテリアル");
-                }
-                if (skippedSlots > 0)
-                {
-                    Debug.Log($"  {skippedSlots}個のスロットをスキップしました (全ての選択肢で同一マテリアル)");
+                    string output = $"{uniqueRenderes.Count}個の固有Renderer:\n";
+                    foreach (var (rendererPath, slotIndex) in uniqueRenderes)
+                    {
+                        output += $"slot[{slotIndex}]: {rendererPath}\n";
+                    }
+                    Debug.LogWarning(output);
                 }
             }
             catch (System.Exception e)
@@ -740,6 +454,134 @@ namespace AvatarMenuCreatorGenerator
             }
 
             return string.Join("/", path);
+        }
+
+        // ベースオブジェクトのRendererマッピングを作成
+        private Dictionary<string, RendererInfo> BuildRendererMap(GameObject baseObject)
+        {
+            var map = new Dictionary<string, RendererInfo>();
+            var renderers = baseObject.GetComponentsInChildren<Renderer>(true);
+
+            foreach (var renderer in renderers)
+            {
+                string path = GetRelativePath(renderer.gameObject, baseObject);
+                var info = new RendererInfo
+                {
+                    renderer = renderer,
+                    path = path,
+                    localPosition = renderer.transform.localPosition,
+                    localRotation = renderer.transform.localRotation,
+                    localScale = renderer.transform.localScale
+                };
+
+                if (renderer is SkinnedMeshRenderer smr)
+                {
+                    info.sharedMesh = smr.sharedMesh;
+                    info.rootBone = smr.rootBone;
+                    info.localBounds = smr.localBounds;
+                }
+
+                map[path] = info;
+            }
+
+            return map;
+        }
+
+        // マッチするマテリアルを検索
+        private MaterialInfo FindMatchingMaterial(List<MaterialInfo> materials, string targetPath, int targetSlot, GameObject sourceObject, GameObject baseObject, Dictionary<string, RendererInfo> baseRendererMap)
+        {
+            // まず完全一致を探す
+            var exactMatch = materials.FirstOrDefault(m =>
+                m.rendererPath == targetPath && m.materialSlotIndex == targetSlot);
+
+            if (exactMatch != null)
+            {
+                return exactMatch;
+            }
+
+            // ベースのRenderer情報を取得
+            if (!baseRendererMap.TryGetValue(targetPath, out var baseInfo))
+            {
+                return null;
+            }
+
+            // baseInfoがSkinnedMeshRendererでない場合は完全一致のみ
+            if (baseInfo.renderer is not SkinnedMeshRenderer baseSMR)
+            {
+                return null;
+            }
+
+            // sourceObject内の全てのSkinnedMeshRendererを取得
+            var sourceRenderers = sourceObject.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+
+            // Meshが一致するRendererを検索
+            var matchingRenderers = new List<(SkinnedMeshRenderer renderer, string path)>();
+
+            foreach (var sourceRenderer in sourceRenderers)
+            {
+                if (sourceRenderer.sharedMesh == baseSMR.sharedMesh &&
+                    sourceRenderer.sharedMaterials.Length > targetSlot)
+                {
+                    string path = GetRelativePath(sourceRenderer.gameObject, sourceObject);
+                    matchingRenderers.Add((sourceRenderer, path));
+                }
+            }
+
+            // 一致するものが1つだけの場合はそのマテリアルを返す
+            if (matchingRenderers.Count == 1)
+            {
+                var (renderer, path) = matchingRenderers[0];
+                return new MaterialInfo
+                {
+                    material = renderer.sharedMaterials[targetSlot],
+                    rendererPath = path,
+                    materialSlotIndex = targetSlot
+                };
+            }
+
+            // 複数ある場合はパラメーターの比較を行う
+            foreach (var (sourceRenderer, sourcePath) in matchingRenderers)
+            {
+                var sourceInfo = new RendererInfo
+                {
+                    renderer = sourceRenderer,
+                    path = sourcePath,
+                    localPosition = sourceRenderer.transform.localPosition,
+                    localRotation = sourceRenderer.transform.localRotation,
+                    localScale = sourceRenderer.transform.localScale,
+                    sharedMesh = sourceRenderer.sharedMesh,
+                    rootBone = sourceRenderer.rootBone,
+                    localBounds = sourceRenderer.localBounds
+                };
+
+                // Transformの比較
+                if (!IsTransformEqual(sourceInfo, baseInfo))
+                {
+                    continue;
+                }
+
+                // RootBoneの比較
+                if (sourceRenderer.rootBone != baseSMR.rootBone)
+                {
+                    continue;
+                }
+
+                // Boundsの比較
+                if (!IsBoundsEqual(sourceRenderer.localBounds, baseSMR.localBounds))
+                {
+                    continue;
+                }
+
+                // 全ての条件を満たした
+                return new MaterialInfo
+                {
+                    material = sourceRenderer.sharedMaterials[targetSlot],
+                    rendererPath = sourcePath,
+                    materialSlotIndex = targetSlot
+                };
+            }
+
+            return null;
         }
     }
 }
