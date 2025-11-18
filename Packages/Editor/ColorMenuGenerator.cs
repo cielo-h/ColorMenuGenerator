@@ -244,7 +244,7 @@ namespace AvatarMenuCreatorGenerator
 
                     foreach (var variation in includedVariations)
                     {
-                        var matchingMat = FindMatchingMaterial(variation.materials, rendererPath, slotIndex, variation.sourcePrefab, basePrefab, baseRendererMap);
+                        var matchingMat = FindMatchingMaterial(variation.materials, rendererPath, slotIndex, variation.sourcePrefab, baseRendererMap);
                         if (matchingMat != null && matchingMat.material != null)
                         {
                             materialsForSlot.Add(matchingMat.material);
@@ -318,7 +318,7 @@ namespace AvatarMenuCreatorGenerator
                     for (int i = 0; i < includedVariations.Count; i++)
                     {
                         var variation = includedVariations[i];
-                        var matchingMat = FindMatchingMaterial(variation.materials, rendererPath, slotIndex, variation.sourcePrefab, basePrefab, baseRendererMap);
+                        var matchingMat = FindMatchingMaterial(variation.materials, rendererPath, slotIndex, variation.sourcePrefab, baseRendererMap);
 
                         if (matchingMat != null)
                         {
@@ -488,7 +488,7 @@ namespace AvatarMenuCreatorGenerator
         }
 
         // マッチするマテリアルを検索
-        private MaterialInfo FindMatchingMaterial(List<MaterialInfo> materials, string targetPath, int targetSlot, GameObject sourceObject, GameObject baseObject, Dictionary<string, RendererInfo> baseRendererMap)
+        private MaterialInfo FindMatchingMaterial(List<MaterialInfo> materials, string targetPath, int targetSlot, GameObject sourceObject, Dictionary<string, RendererInfo> baseRendererMap)
         {
             // まず完全一致を探す
             var exactMatch = materials.FirstOrDefault(m =>
