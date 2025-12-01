@@ -5,7 +5,7 @@ using UnityEngine;
 #if UNITY_EDITOR
 namespace AvatarMenuCreatorGenerator
 {
-    public partial class MaterialPresetChooseMenuGenerator : EditorWindow
+    public partial class ColorMenuGenerator : EditorWindow
     {
         [System.Serializable]
         public class PrefabVariation

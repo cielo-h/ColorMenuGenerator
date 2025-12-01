@@ -11,7 +11,7 @@ namespace AvatarMenuCreatorGenerator
     /// <summary>
     /// シーン内のベースprefabと複数のバリエーションprefabからマテリアル変更メニューを生成するツール
     /// </summary>
-    public partial class MaterialPresetChooseMenuGenerator : EditorWindow
+    public partial class ColorMenuGenerator : EditorWindow
     {
         private GameObject targetAvatar;
         private GameObject basePrefab; // シーン内の既存オブジェクト
@@ -20,7 +20,11 @@ namespace AvatarMenuCreatorGenerator
         private bool saved = true;
         private bool synced = true;
         private bool choiceNameOnlyNumber = false;
+        private bool addMAMenuInstaller = true;
         private int defaultChoiceIndex = 0;
+
+        private bool useCustomNameParse = false;
+        private string nameParsePattern = "{1}";
 
         private readonly List<PrefabVariation> detectedVariations = new();
         private Vector2 scrollPos;
@@ -151,8 +155,11 @@ namespace AvatarMenuCreatorGenerator
                 menuObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                 menuObject.transform.localScale = Vector3.one;
 
-                //MA Menu Installerを追加
-                VRC.Core.ExtensionMethods.GetOrAddComponent<ModularAvatarMenuInstaller>(menuObject);
+                if (addMAMenuInstaller)
+                {
+                    //MA Menu Installerを追加
+                    VRC.Core.ExtensionMethods.GetOrAddComponent<ModularAvatarMenuInstaller>(menuObject);
+                }
 
                 var choiceNames = new HashSet<string>();
                 foreach (var variation in includedVariations)

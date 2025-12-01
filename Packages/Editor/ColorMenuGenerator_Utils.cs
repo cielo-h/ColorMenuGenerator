@@ -1,11 +1,12 @@
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
 #if UNITY_EDITOR
 namespace AvatarMenuCreatorGenerator
 {
-    public partial class MaterialPresetChooseMenuGenerator : EditorWindow
+    public partial class ColorMenuGenerator : EditorWindow
     {
         private string GetRelativePath(GameObject obj, GameObject root)
         {
@@ -23,8 +24,13 @@ namespace AvatarMenuCreatorGenerator
             return string.Join("/", path);
         }
 
-        string CleanupName(string name)
+        private string CleanupName(string name)
         {
+            if (useCustomNameParse && !string.IsNullOrWhiteSpace(nameParsePattern))
+            {
+                return ParseNameWithPattern(name, nameParsePattern);
+            }
+
             // "Avatar_ColorRed" -> "ColorRed" のような変換
             if (name.Contains("_"))
             {
@@ -35,6 +41,19 @@ namespace AvatarMenuCreatorGenerator
                 }
             }
             return name;
+        }
+
+        private string ParseNameWithPattern(string name, string pattern)
+        {
+            var parts = name.Split('_', '-', ' ', ',');
+            var result = pattern;
+            result = Regex.Replace(result, @"\{(\d+)\}", match =>
+            {
+                int index = int.Parse(match.Groups[1].Value);
+                int actualIndex = index - 1;
+                return actualIndex >= 0 && actualIndex < parts.Length ? parts[actualIndex] : string.Empty;
+            });
+            return result;
         }
 
         // Transform値が等しいかチェック

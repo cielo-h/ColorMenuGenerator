@@ -5,20 +5,59 @@ using UnityEngine;
 #if UNITY_EDITOR
 namespace AvatarMenuCreatorGenerator
 {
-    public partial class MaterialPresetChooseMenuGenerator : EditorWindow
+    public partial class ColorMenuGenerator : EditorWindow
     {
         [MenuItem("Tools/Color Menu Generator")]
         public static void ShowWindow()
         {
-            var window = GetWindow<MaterialPresetChooseMenuGenerator>("Material Preset Generator");
-            window.minSize = new Vector2(480, 600);
+            var window = GetWindow<ColorMenuGenerator>("Color Menu Generator");
+            window.minSize = new Vector2(640, 790);
+        }
+
+        private void OnDisable()
+        {
+            SessionState.SetString("MaterialPresetMenu_MenuName", menuName);
+            SessionState.SetBool("MaterialPresetMenu_Saved", saved);
+            SessionState.SetBool("MaterialPresetMenu_Synced", synced);
+            SessionState.SetBool("MaterialPresetMenu_ChoiceNameOnlyNumber", choiceNameOnlyNumber);
+            SessionState.SetBool("MaterialPresetMenu_AddMAMenuInstaller", addMAMenuInstaller);
+            SessionState.SetInt("MaterialPresetMenu_DefaultChoiceIndex", defaultChoiceIndex);
+
+            SessionState.SetBool("MaterialPresetMenu_UseCustomNameParse", useCustomNameParse);
+            SessionState.SetString("MaterialPresetMenu_NameParsePattern", nameParsePattern);
+
+            if (targetAvatar != null)
+                SessionState.SetInt("MaterialPresetMenu_TargetAvatar", targetAvatar.GetInstanceID());
+            if (basePrefab != null)
+                SessionState.SetInt("MaterialPresetMenu_BasePrefab", basePrefab.GetInstanceID());
+        }
+
+        private void OnEnable()
+        {
+            menuName = SessionState.GetString("MaterialPresetMenu_MenuName", "色メニュー");
+            saved = SessionState.GetBool("MaterialPresetMenu_Saved", true);
+            synced = SessionState.GetBool("MaterialPresetMenu_Synced", true);
+            choiceNameOnlyNumber = SessionState.GetBool("MaterialPresetMenu_ChoiceNameOnlyNumber", false);
+            addMAMenuInstaller = SessionState.GetBool("MaterialPresetMenu_AddMAMenuInstaller", true);
+            defaultChoiceIndex = SessionState.GetInt("MaterialPresetMenu_DefaultChoiceIndex", 0);
+
+            useCustomNameParse = SessionState.GetBool("MaterialPresetMenu_UseCustomNameParse", false);
+            nameParsePattern = SessionState.GetString("MaterialPresetMenu_NameParsePattern", "{1}");
+
+            int avatarID = SessionState.GetInt("MaterialPresetMenu_TargetAvatar", 0);
+            if (avatarID != 0)
+                targetAvatar = EditorUtility.InstanceIDToObject(avatarID) as GameObject;
+
+            int baseID = SessionState.GetInt("MaterialPresetMenu_BasePrefab", 0);
+            if (baseID != 0)
+                basePrefab = EditorUtility.InstanceIDToObject(baseID) as GameObject;
         }
 
         void OnGUI()
         {
             scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
 
-            GUILayout.Label("マテリアルプリセット ChooseMenu 生成", EditorStyles.boldLabel);
+            GUILayout.Label("カラーメニュー ChooseMenu 生成", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "シーン内のベースオブジェクトと複数のバリエーションprefabから\n" +
                 "マテリアル変更メニューを生成します。\n" +
@@ -135,6 +174,7 @@ namespace AvatarMenuCreatorGenerator
                 variationPrefabs[i] = EditorGUILayout.ObjectField($"Prefab {i + 1}", variationPrefabs[i], typeof(GameObject), false) as GameObject;
                 if (GUILayout.Button("-", GUILayout.Width(25)))
                 {
+                    EditorGUILayout.EndHorizontal();
                     variationPrefabs.RemoveAt(i);
                     detectedVariations.Clear();
                     break;
@@ -168,6 +208,8 @@ namespace AvatarMenuCreatorGenerator
             saved = EditorGUILayout.Toggle("パラメーターを保存", saved);
             synced = EditorGUILayout.Toggle("パラメーターを同期", synced);
             choiceNameOnlyNumber = EditorGUILayout.Toggle("選択肢名を数字のみにする", choiceNameOnlyNumber);
+
+            DrawOptionSettings();
 
             EditorGUILayout.Space(15);
 
@@ -277,6 +319,39 @@ namespace AvatarMenuCreatorGenerator
             GUI.enabled = true;
 
             EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawOptionSettings()
+        {
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("オプション設定", EditorStyles.boldLabel);
+
+            addMAMenuInstaller = EditorGUILayout.Toggle("MAMenuInstallerを追加する", addMAMenuInstaller);
+            useCustomNameParse = EditorGUILayout.Toggle("カスタムパースを使用", useCustomNameParse);
+
+            if (useCustomNameParse)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("パターン:", GUILayout.Width(60));
+                nameParsePattern = EditorGUILayout.TextField(nameParsePattern);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.HelpBox(
+                    "例: Avt_White_01 の場合\n" +
+                    "{1} = Avt\n" +
+                    "{2} = White\n" +
+                    "{3} = 01\n" +
+                    "{2}_{3} = White_01\n" +
+                    "範囲外のインデックスは空文字になります",
+                    MessageType.Info);
+
+                // プレビュー表示
+                if (basePrefab != null)
+                {
+                    string preview = ParseNameWithPattern(basePrefab.name, nameParsePattern);
+                    EditorGUILayout.LabelField($"プレビュー: {basePrefab.name} → {preview}");
+                }
+            }
         }
     }
 }
