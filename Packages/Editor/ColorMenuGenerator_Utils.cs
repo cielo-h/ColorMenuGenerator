@@ -40,7 +40,7 @@ namespace AvatarMenuCreatorGenerator
                     return parts[^1];
                 }
             }
-            return name;
+            return name.TrimEnd();
         }
 
         private string ParseNameWithPattern(string name, string pattern)
@@ -53,7 +53,7 @@ namespace AvatarMenuCreatorGenerator
                 int actualIndex = index - 1;
                 return actualIndex >= 0 && actualIndex < parts.Length ? parts[actualIndex] : string.Empty;
             });
-            return result;
+            return result.TrimEnd();
         }
 
         // Transform値が等しいかチェック

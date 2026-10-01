@@ -13,6 +13,9 @@ namespace AvatarMenuCreatorGenerator
     /// </summary>
     public partial class ColorMenuGenerator : EditorWindow
     {
+        private int selectedTab = 0;
+        private static readonly string[] tabNames = { "Generator", "Merger" };
+
         private GameObject targetAvatar;
         private GameObject basePrefab; // シーン内の既存オブジェクト
         private readonly List<GameObject> variationPrefabs = new(); // プロジェクトのprefab
@@ -23,6 +26,7 @@ namespace AvatarMenuCreatorGenerator
         private bool addMAMenuInstaller = true;
         private int defaultChoiceIndex = 0;
 
+        private bool useRawName = false;
         private bool useCustomNameParse = false;
         private string nameParsePattern = "{1}";
 
@@ -54,7 +58,7 @@ namespace AvatarMenuCreatorGenerator
             {
                 detectedVariations.Add(new PrefabVariation
                 {
-                    choiceName = CleanupName(basePrefab.name),
+                    choiceName = useRawName ? basePrefab.name : CleanupName(basePrefab.name),
                     sourcePrefab = basePrefab,
                     materials = baseMaterials,
                     include = true,
@@ -71,7 +75,7 @@ namespace AvatarMenuCreatorGenerator
 
                 if (materials.Count > 0)
                 {
-                    string choiceName = CleanupName(prefab.name);
+                    string choiceName = useRawName ? prefab.name : CleanupName(prefab.name);
 
                     detectedVariations.Add(new PrefabVariation
                     {
@@ -373,7 +377,7 @@ namespace AvatarMenuCreatorGenerator
                     if (nameKeyProp != null && nameValueProp != null)
                     {
                         nameKeyProp.intValue = i;
-                        nameValueProp.stringValue = choiceNameOnlyNumber ? (i + 1).ToString() : variation.choiceName;
+                        nameValueProp.stringValue = choiceNameOnlyNumber ? (i + 1).ToString() : variation.choiceName.TrimEnd();
                     }
                 }
 

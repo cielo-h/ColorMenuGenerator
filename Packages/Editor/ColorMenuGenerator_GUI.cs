@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -23,6 +24,7 @@ namespace AvatarMenuCreatorGenerator
             SessionState.SetBool("MaterialPresetMenu_AddMAMenuInstaller", addMAMenuInstaller);
             SessionState.SetInt("MaterialPresetMenu_DefaultChoiceIndex", defaultChoiceIndex);
 
+            SessionState.SetBool("MaterialPresetMenu_UseRawName", useRawName);
             SessionState.SetBool("MaterialPresetMenu_UseCustomNameParse", useCustomNameParse);
             SessionState.SetString("MaterialPresetMenu_NameParsePattern", nameParsePattern);
 
@@ -30,6 +32,11 @@ namespace AvatarMenuCreatorGenerator
                 SessionState.SetInt("MaterialPresetMenu_TargetAvatar", targetAvatar.GetInstanceID());
             if (basePrefab != null)
                 SessionState.SetInt("MaterialPresetMenu_BasePrefab", basePrefab.GetInstanceID());
+
+            SessionState.SetBool("MaterialPresetMenu_ReplaceUseRegex", replaceUseRegex);
+            SessionState.SetBool("MaterialPresetMenu_ReplaceIgnoreCase", replaceIgnoreCase);
+            SessionState.SetBool("MaterialPresetMenu_ShowReplaceSettings", showReplaceSettings);
+            SessionState.SetInt("MaterialPresetMenu_SelectedTab", selectedTab);
         }
 
         private void OnEnable()
@@ -41,6 +48,7 @@ namespace AvatarMenuCreatorGenerator
             addMAMenuInstaller = SessionState.GetBool("MaterialPresetMenu_AddMAMenuInstaller", true);
             defaultChoiceIndex = SessionState.GetInt("MaterialPresetMenu_DefaultChoiceIndex", 0);
 
+            useRawName = SessionState.GetBool("MaterialPresetMenu_UseRawName", false);
             useCustomNameParse = SessionState.GetBool("MaterialPresetMenu_UseCustomNameParse", false);
             nameParsePattern = SessionState.GetString("MaterialPresetMenu_NameParsePattern", "{1}");
 
@@ -51,12 +59,35 @@ namespace AvatarMenuCreatorGenerator
             int baseID = SessionState.GetInt("MaterialPresetMenu_BasePrefab", 0);
             if (baseID != 0)
                 basePrefab = EditorUtility.InstanceIDToObject(baseID) as GameObject;
+
+            replaceUseRegex = SessionState.GetBool("MaterialPresetMenu_ReplaceUseRegex", false);
+            replaceIgnoreCase = SessionState.GetBool("MaterialPresetMenu_ReplaceIgnoreCase", false);
+            showReplaceSettings = SessionState.GetBool("MaterialPresetMenu_ShowReplaceSettings", false);
+            selectedTab = SessionState.GetInt("MaterialPresetMenu_SelectedTab", 0);
         }
 
         void OnGUI()
         {
-            scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
+            selectedTab = GUILayout.Toolbar(selectedTab, tabNames, GUILayout.Height(25));
+            EditorGUILayout.Space(5);
 
+            scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
+            switch (selectedTab)
+            {
+                case 0:
+                    DrawGeneratorTab();
+                    break;
+                case 1:
+                    DrawMergerTab();
+                    break;
+                default:
+                    break;
+            }
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawGeneratorTab()
+        {
             GUILayout.Label("カラーメニュー ChooseMenu 生成", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "シーン内のベースオブジェクトと複数のバリエーションprefabから\n" +
@@ -265,7 +296,7 @@ namespace AvatarMenuCreatorGenerator
                         }
                         EditorGUILayout.EndHorizontal();
 
-                        variation.choiceName = EditorGUILayout.TextField("選択肢名", variation.choiceName);
+                        variation.choiceName = EditorGUILayout.TextField("選択肢名", variation.choiceName).TrimEnd();
 
                         EditorGUI.BeginDisabledGroup(true);
                         if (variation.isBase)
@@ -317,16 +348,21 @@ namespace AvatarMenuCreatorGenerator
             }
             GUI.backgroundColor = Color.white;
             GUI.enabled = true;
-
-            EditorGUILayout.EndScrollView();
         }
 
+        private bool showReplaceSettings = false;
+        private bool replaceUseRegex = false;
+        private bool replaceIgnoreCase = false;
+        private string replaceFrom = "";
+        private string replaceTo = "";
+        private bool replaceIncludedOnly = false;
         private void DrawOptionSettings()
         {
             EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("オプション設定", EditorStyles.boldLabel);
 
             addMAMenuInstaller = EditorGUILayout.Toggle("MAMenuInstallerを追加する", addMAMenuInstaller);
+            useRawName = EditorGUILayout.Toggle("元の名前をそのまま使用する", useRawName);
             useCustomNameParse = EditorGUILayout.Toggle("カスタムパースを使用", useCustomNameParse);
 
             if (useCustomNameParse)
@@ -352,6 +388,121 @@ namespace AvatarMenuCreatorGenerator
                     EditorGUILayout.LabelField($"プレビュー: {basePrefab.name} → {preview}");
                 }
             }
+
+            EditorGUILayout.Space(10);
+            EditorGUILayout.Space(10);
+            showReplaceSettings = EditorGUILayout.Foldout(showReplaceSettings, "選択肢名の一括置換", true, EditorStyles.foldoutHeader);
+
+            if (showReplaceSettings)
+            {
+                EditorGUI.indentLevel++;
+
+                replaceFrom = EditorGUILayout.TextField("置換対象の文字列", replaceFrom);
+                replaceTo = EditorGUILayout.TextField("置換後の文字列", replaceTo);
+                replaceUseRegex = EditorGUILayout.Toggle("正規表現を使用", replaceUseRegex);
+                replaceIgnoreCase = EditorGUILayout.Toggle("大文字小文字を区別しない", replaceIgnoreCase);
+                replaceIncludedOnly = EditorGUILayout.Toggle("有効な選択肢のみ対象", replaceIncludedOnly);
+
+                if (replaceUseRegex)
+                {
+                    EditorGUILayout.HelpBox(
+                        "例: ^Ramune_  → 先頭のRamune_を削除\n" +
+                        "例: _\\d+$   → 末尾の _数字 を削除\n" +
+                        "例: (\\w+)_(\\w+) → 置換後に $2_$1 と書くと入れ替え\n" +
+                        "置換後の文字列では $1, $2 などでキャプチャグループを参照できます",
+                        MessageType.None);
+                }
+
+                // 正規表現の検証と該当件数
+                Regex regex = null;
+                string regexError = null;
+                if (replaceUseRegex && !string.IsNullOrEmpty(replaceFrom))
+                {
+                    try { regex = CreateReplaceRegex(); }
+                    catch (System.ArgumentException e) { regexError = e.Message; }
+                }
+
+                if (regexError != null)
+                    EditorGUILayout.HelpBox($"正規表現が不正です: {regexError}", MessageType.Error);
+
+                int hitCount = 0;
+                if (!string.IsNullOrEmpty(replaceFrom) && regexError == null)
+                {
+                    hitCount = detectedVariations.Count(v =>
+                        (!replaceIncludedOnly || v.include) &&
+                        !string.IsNullOrEmpty(v.choiceName) &&
+                        IsReplaceMatch(v.choiceName, regex));
+                }
+
+                using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(replaceFrom) || hitCount == 0 || regexError != null))
+                {
+                    if (GUILayout.Button(detectedVariations.Count == 0
+                        ? "置換を実行 (先にマテリアルを検出してください)"
+                        : $"置換を実行 ({hitCount}件が該当)"))
+                    {
+                        ReplaceChoiceNames();
+                    }
+                }
+
+                EditorGUI.indentLevel--;
+            }
+        }
+
+        private Regex CreateReplaceRegex()
+        {
+            var options = replaceIgnoreCase ? RegexOptions.IgnoreCase : RegexOptions.None;
+            return new Regex(replaceFrom, options);
+        }
+
+        private bool IsReplaceMatch(string input, Regex regex)
+        {
+            if (replaceUseRegex)
+                return regex != null && regex.IsMatch(input);
+
+            var comparison = replaceIgnoreCase
+                ? System.StringComparison.OrdinalIgnoreCase
+                : System.StringComparison.Ordinal;
+            return input.IndexOf(replaceFrom, comparison) >= 0;
+        }
+
+        private string ApplyReplace(string input, Regex regex)
+        {
+            string to = replaceTo ?? "";
+
+            if (replaceUseRegex)
+                return regex.Replace(input, to);
+
+            return replaceIgnoreCase
+                ? Regex.Replace(input, Regex.Escape(replaceFrom), to.Replace("$", "$$"), RegexOptions.IgnoreCase)
+                : input.Replace(replaceFrom, to);
+        }
+
+        private void ReplaceChoiceNames()
+        {
+            Regex regex = null;
+            if (replaceUseRegex)
+            {
+                try { regex = CreateReplaceRegex(); }
+                catch (System.ArgumentException e)
+                {
+                    EditorUtility.DisplayDialog("エラー", $"正規表現が不正です:\n{e.Message}", "OK");
+                    return;
+                }
+            }
+
+            int changed = 0;
+            foreach (var v in detectedVariations)
+            {
+                if (replaceIncludedOnly && !v.include) continue;
+                if (string.IsNullOrEmpty(v.choiceName) || !IsReplaceMatch(v.choiceName, regex)) continue;
+
+                v.choiceName = ApplyReplace(v.choiceName, regex).TrimEnd();
+                changed++;
+            }
+
+            GUI.FocusControl(null);
+            Repaint();
+            Debug.Log($"選択肢名を置換しました: \"{replaceFrom}\" → \"{replaceTo}\" ({changed}件, 正規表現: {replaceUseRegex})");
         }
     }
 }
